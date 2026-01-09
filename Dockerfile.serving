@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Installiere nur notwendige Abhängigkeiten
+RUN pip install --no-cache-dir \
+    flask==3.0.0 \
+    flask-cors==4.0.0
+
+# Kopiere API-Code
+COPY src/serving/api_server.py .
+
+EXPOSE 5000
+
+CMD ["python", "api_server.py"]

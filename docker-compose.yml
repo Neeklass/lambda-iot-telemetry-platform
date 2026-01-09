@@ -27,8 +27,6 @@ services:
     networks:
       - iot-network
 
-  # Apache Spark Master - Speed Layer für Echtzeitverarbeitung
-  # Koordiniert die Verarbeitung von Streaming-Daten aus Kafka
   spark-master:
     image: apache/spark:3.5.0
     container_name: spark-master
@@ -37,13 +35,11 @@ services:
       - SPARK_NO_DAEMONIZE=1
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     ports:
-      - "8080:8080"  # Spark Master Web UI
-      - "7077:7077"  # Spark Master Port
+      - "8080:8080"
+      - "7077:7077"
     networks:
       - iot-network
 
-  # Apache Spark Worker - Führt die eigentliche Datenverarbeitung aus
-  # Verarbeitet die Streaming-Jobs vom Master
   spark-worker:
     image: apache/spark:3.5.0
     container_name: spark-worker
@@ -57,23 +53,106 @@ services:
     depends_on:
       - spark-master
     ports:
-      - "8081:8081"  # Spark Worker Web UI
+      - "8081:8081"
     networks:
       - iot-network
 
-  # Grafana - Visualisierung und Dashboards
-  # Bietet grafische Darstellung der Echtzeit-Daten und historischen Analysen
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      - CLUSTER_NAME=iot-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_http_staticuser_user=root
+      - HDFS_CONF_dfs_replication=1
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    networks:
+      - iot-network
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_http_staticuser_user=root
+    depends_on:
+      - namenode
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    networks:
+      - iot-network
+
+  alert-processor:
+    image: apache/spark:3.5.0
+    container_name: alert-processor
+    command: >
+      /opt/spark/bin/spark-submit
+      --master spark://spark-master:7077
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0
+      --conf spark.hadoop.fs.defaultFS=hdfs://namenode:9000
+      /app/alert_processor.py
+    volumes:
+      - ./src/streaming:/app
+    depends_on:
+      - kafka
+      - spark-master
+      - namenode
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  data-archiver:
+    image: apache/spark:3.5.0
+    container_name: data-archiver
+    command: >
+      /opt/spark/bin/spark-submit
+      --master spark://spark-master:7077
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0
+      --conf spark.hadoop.fs.defaultFS=hdfs://namenode:9000
+      /app/data_archiver.py
+    volumes:
+      - ./src/batch:/app
+    depends_on:
+      - kafka
+      - spark-master
+      - namenode
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  serving-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.serving
+    container_name: serving-api
+    ports:
+      - "5000:5000"
+    environment:
+      - HDFS_NAMENODE=namenode:9000
+    depends_on:
+      - namenode
+    networks:
+      - iot-network
+
   grafana:
     image: grafana/grafana:10.2.0
     container_name: grafana
     ports:
-      - "3000:3000"  # Grafana Web UI
+      - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=
+      - GF_INSTALL_PLUGINS=grafana-simple-json-datasource
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-simple-json-datasource
     volumes:
       - grafana-storage:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - serving-api
     networks:
       - iot-network
 
@@ -83,3 +162,5 @@ networks:
 
 volumes:
   grafana-storage:
+  hadoop_namenode:
+  hadoop_datanode:

@@ -1,2 +1,8 @@
 kafka-python==2.0.2
+kafka-python-ng==2.2.3
 pyspark==3.5.0
+six
+flask==3.0.0
+flask-cors==4.0.0
+pyarrow==14.0.1
+pandas==2.1.3

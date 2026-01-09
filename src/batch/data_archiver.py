@@ -1,30 +1,20 @@
-"""
-Data Archiver - Batch Layer
-Liest den kompletten Datenstrom von Kafka und archiviert die Rohdaten im Parquet-Format.
-Dies ist Teil der Batch Layer in der Lambda Architecture für historische Analysen.
-"""
-
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, year, month, dayofmonth
 from pyspark.sql.types import StructType, StructField, StringType, FloatType, LongType
 
-# Logging-Konfiguration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Kafka-Konfiguration
-KAFKA_BROKER = 'localhost:9092'
+KAFKA_BROKER = 'kafka:9092'
 TOPIC_NAME = 'machine_temps'
 
-# Archiv-Konfiguration
-ARCHIVE_PATH = 'data/archive'
-CHECKPOINT_PATH = 'data/checkpoint/batch'
+ARCHIVE_PATH = 'hdfs://namenode:9000/iot/batch/archive'
+CHECKPOINT_PATH = 'hdfs://namenode:9000/spark/checkpoint/batch'
 
-# Schema für die eingehenden Sensordaten
 sensor_schema = StructType([
     StructField("timestamp", LongType(), False),
     StructField("machine_id", StringType(), False),
@@ -33,21 +23,16 @@ sensor_schema = StructType([
 
 
 def create_spark_session():
-    """
-    Erstellt eine Spark Session mit Kafka-Integration für Batch Processing.
-    
-    Returns:
-        SparkSession: Konfigurierte Spark Session
-    """
     spark = SparkSession.builder \
         .appName("IoT-Data-Archiver-BatchLayer") \
-        .master("local[*]") \
+        .master("spark://spark-master:7077") \
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
         .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_PATH) \
+        .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
         .getOrCreate()
     
     spark.sparkContext.setLogLevel("WARN")
-    logger.info("Spark Session erfolgreich erstellt")
+    logger.info("Spark Session erfolgreich erstellt (Cluster-Modus mit HDFS)")
     return spark
 
 
@@ -58,31 +43,20 @@ def archive_stream(spark):
     
     Args:
         spark (SparkSession): Die Spark Session
-    """
-    logger.info(f"Verbinde mit Kafka Broker: {KAFKA_BROKER}")
-    logger.info(f"Lese von Topic: {TOPIC_NAME}")
-    logger.info(f"Archiviere Daten nach: {ARCHIVE_PATH}")
-    
-    # Kafka Stream lesen
-    kafka_stream = spark \
         .readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", KAFKA_BROKER) \
         .option("subscribe", TOPIC_NAME) \
         .option("startingOffsets", "earliest") \
-        .load()
     
     logger.info("Kafka Stream erfolgreich initialisiert")
     
     # JSON-Daten aus dem Kafka-Value-Feld parsen
-    parsed_stream = kafka_stream \
         .selectExpr("CAST(value AS STRING) as json_value") \
         .select(from_json(col("json_value"), sensor_schema).alias("data")) \
         .select("data.*")
     
     # Füge Datums-Partitionierungsfelder hinzu (für effiziente Abfragen)
-    # Konvertiere Unix-Timestamp zu Datum
-    partitioned_stream = parsed_stream \
         .withColumn("date", col("timestamp").cast("timestamp")) \
         .withColumn("year", year(col("date"))) \
         .withColumn("month", month(col("date"))) \
@@ -91,8 +65,6 @@ def archive_stream(spark):
     # Schreibe Stream als Parquet-Dateien
     # Partitioniert nach Jahr/Monat/Tag für optimale Performance bei historischen Abfragen
     query = partitioned_stream \
-        .writeStream \
-        .outputMode("append") \
         .format("parquet") \
         .option("path", ARCHIVE_PATH) \
         .option("checkpointLocation", CHECKPOINT_PATH) \
@@ -109,14 +81,10 @@ def archive_stream(spark):
     query.awaitTermination()
 
 
-def main():
-    """
-    Hauptfunktion: Initialisiert Spark und startet die Batch-Archivierung.
-    """
-    try:
-        spark = create_spark_session()
-        archive_stream(spark)
-    except KeyboardInterrupt:
+def query.awaitTermination()
+
+
+def main():ept KeyboardInterrupt:
         logger.info("Batch-Archivierung durch Benutzer beendet")
     except Exception as e:
         logger.error(f"Fehler in der Batch-Archivierung: {e}", exc_info=True)

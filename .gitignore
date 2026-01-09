@@ -54,7 +54,10 @@ data/archive/
 data/checkpoint/
 *.parquet
 *.csv
-*.json
+
+# Hadoop/HDFS
+hadoop_namenode/
+hadoop_datanode/
 
 # Logs
 *.log
