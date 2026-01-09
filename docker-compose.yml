@@ -65,6 +65,25 @@ services:
     networks:
       - iot-network
 
+  # Grafana - Visualisierung und Dashboards
+  # Bietet grafische Darstellung der Echtzeit-Daten und historischen Analysen
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"  # Grafana Web UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - iot-network
+
 networks:
   iot-network:
     driver: bridge
+
+volumes:
+  grafana-storage:
